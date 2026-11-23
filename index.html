@@ -2,29 +2,95 @@
 <html lang="it">
 <head>
 <script>
-/* Versione GitHub del magazzino: i dati arrivano dall'App web di Apps Script senza mandare gli account Google del browser. */
+/* Versione GitHub del magazzino: accesso con utente e password, dati dall'App web di Apps Script senza account Google del browser. */
 window.API_URL = 'https://script.google.com/macros/s/AKfycbwN_R1mXdcLe5jI3nMZn3qtxMFuYFjJxq-pq3nGreJle0TtoRSOkiGnnkY1rLpsey4L/exec';
 (function(){
-  var k = new URLSearchParams(location.search).get('k') || '';
-  window.MODO = 'magazzino'; window.CHIAVE = k; window.PREZZI = false;
-  window.RUOLO = /^INST-/.test(k) ? 'Installatore' : (/^MAG-/.test(k) ? 'Collaboratore' : '');
-  function chiama(fn, args){
+  function leggi(k){ try { return localStorage.getItem(k) || ''; } catch(e) { return ''; } }
+  function scrivi(k, v){ try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch(e) {} }
+  window.MODO = 'magazzino'; window.CHIAVE = ''; window.PREZZI = false;
+  window.RUOLO = leggi('gi_mag_ruolo');
+  var gettone = leggi('gi_mag_gettone'), attesa = null;
+
+  function post(fn, args){
     return fetch(window.API_URL, {method:'POST', credentials:'omit', redirect:'follow',
       headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({fn: fn, args: args})})
       .then(function(r){ return r.json(); })
       .then(function(j){ if (!j.ok) throw new Error(j.err || 'Errore'); return j.res; });
+  }
+  function aggiornaTesta(){
+    var w = document.querySelector('.who span'); if (w && window.RUOLO) w.textContent = 'Magazzino · ' + window.RUOLO;
+  }
+  function accedi(){
+    if (attesa) return attesa;
+    attesa = new Promise(function(fatto){
+      var d = document.createElement('div'); d.id = 'login';
+      d.innerHTML = '<form class="lg-card"><div class="lg-logo">GI</div><h2>Magazzino</h2><p>Green Innovation · accedi con le tue credenziali</p>' +
+        '<label>Utente<input id="lg-u" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>' +
+        '<label>Password<input id="lg-p" type="password" autocomplete="current-password" required></label>' +
+        '<div id="lg-err" role="alert"></div><button id="lg-b" type="submit">Entra</button></form>';
+      document.body.appendChild(d);
+      setTimeout(function(){ document.getElementById('lg-u').focus(); }, 50);
+      d.querySelector('form').onsubmit = function(ev){
+        ev.preventDefault();
+        var b = document.getElementById('lg-b'), err = document.getElementById('lg-err');
+        b.disabled = true; b.textContent = 'Controllo…'; err.textContent = '';
+        post('loginMagazzino', [document.getElementById('lg-u').value, document.getElementById('lg-p').value]).then(function(r){
+          gettone = r.gettone; scrivi('gi_mag_gettone', gettone);
+          window.RUOLO = r.ruolo; scrivi('gi_mag_ruolo', r.ruolo); aggiornaTesta();
+          if (!leggi('gi_chi') && r.nome) scrivi('gi_chi', r.nome);
+          d.remove(); attesa = null; fatto();
+        }, function(e){
+          err.textContent = String(e && e.message || e); b.disabled = false; b.textContent = 'Entra';
+        });
+      };
+    });
+    return attesa;
+  }
+  function chiama(fn, args, giaRiprovato){
+    var pronto = gettone ? Promise.resolve() : accedi();
+    return pronto.then(function(){
+      var a = args.slice(); a[a.length ? a.length - 1 : 0] = gettone;
+      return post(fn, a);
+    }).catch(function(e){
+      if (/^LOGIN:/.test(String(e && e.message)) && !giaRiprovato) {
+        gettone = ''; scrivi('gi_mag_gettone', '');
+        return chiama(fn, args, true);
+      }
+      throw e;
+    });
   }
   function runner(ok, ko){
     return new Proxy({}, {get: function(_, p){
       if (p === 'withSuccessHandler') return function(f){ return runner(f, ko); };
       if (p === 'withFailureHandler') return function(f){ return runner(ok, f); };
       return function(){ var a = Array.prototype.slice.call(arguments);
-        chiama(p, a).then(function(r){ if (ok) ok(r); }, function(e){ if (ko) ko(e); else console.error(e); }); };
+        chiama(p, a).then(function(r){ if (ok) ok(r); aggiornaTesta(); }, function(e){ if (ko) ko(e); else console.error(e); }); };
     }});
   }
   window.google = {script: {run: runner(null, null)}};
+  document.addEventListener('DOMContentLoaded', function(){
+    aggiornaTesta();
+    var r = document.getElementById('refresh'); if (!r) return;
+    var esci = document.createElement('button'); esci.className = 'iconbtn'; esci.title = 'Esci'; esci.setAttribute('aria-label', 'Esci');
+    esci.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+    esci.onclick = function(){ scrivi('gi_mag_gettone', ''); scrivi('gi_mag_ruolo', ''); scrivi('gi_chi', ''); location.reload(); };
+    r.parentNode.insertBefore(esci, r);
+  });
 })();
 </script>
+<style>
+#login{position:fixed;inset:0;z-index:999;display:grid;place-items:center;padding:16px;background:linear-gradient(160deg,var(--bg3),var(--bg) 55%,var(--bg2))}
+#login .lg-card{width:100%;max-width:360px;display:grid;gap:14px;padding:28px 24px;border-radius:26px;background:var(--glass-strong);border:1px solid var(--glass-line);box-shadow:var(--shadow);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:var(--ink);font-family:var(--f-body)}
+#login .lg-logo{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:var(--accent);color:#fff;font:700 17px var(--f-display)}
+#login h2{margin:0;font:700 24px var(--f-display)}
+#login p{margin:-8px 0 4px;color:var(--ink-3);font-size:14px}
+#login label{display:grid;gap:6px;font-size:13px;font-weight:700;color:var(--ink-2)}
+#login input{width:100%;box-sizing:border-box;font:16px var(--f-body);padding:13px 14px;border-radius:14px;border:1px solid var(--glass-line);background:var(--glass);color:var(--ink);outline:none}
+#login input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+#lg-err{min-height:18px;color:var(--bad);font-size:13px;font-weight:600}
+#lg-b{margin-top:2px;padding:14px;border:0;border-radius:999px;background:var(--dark-pill);color:var(--dark-pill-ink);font:700 15px var(--f-body);cursor:pointer}
+#lg-b:disabled{opacity:.6}
+</style>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <base target="_top">
