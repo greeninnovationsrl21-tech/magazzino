@@ -714,7 +714,7 @@ function calcMag(){
     if (String(r.pan||'').trim()) {
       const an = ana[NORM(r.pan)];
       const wp = (an && Number(an.wp)) || Number((String(r.pan).match(/(\d{3})\D*$/)||[])[1]) || 0;
-      const q = r.kw > 0 && wp > 0 ? Math.ceil(r.kw*1000/wp - 1e-9) : 0;
+      const q = Number(r.npan) > 0 ? Math.round(Number(r.npan)) : (r.kw > 0 && wp > 0 ? Math.ceil(r.kw*1000/wp - 1e-9) : 0);
       items.push({nome:r.pan, cat:'PANNELLI', q});
       if (!q && aperta) avvisi.push(`<b>${esc(r.nome)}</b>: manca la potenza in kW, non posso calcolare quanti pannelli servono.`);
     }
