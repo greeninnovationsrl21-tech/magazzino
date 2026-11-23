@@ -680,7 +680,7 @@ function calcMag(){
   let senzaMat = 0;
   D.rows.forEach(r => {
     const st = String(r.stato||'').trim().toLowerCase();
-    const aperta = /^ok\W*da\W*installare$/.test(st) || st === 'in lavorazione';
+    const aperta = /ok\W*da\W*installare/.test(st) || /in\W*lavorazione/.test(st);
     const escl = /sospes|annull/.test(st);
     const cons = !aperta && !escl && st && r.dataInst && inizio && r.dataInst >= inizio;
     if (!aperta && !cons) return;
@@ -696,7 +696,7 @@ function calcMag(){
     items.forEach(it => { const a = get(it.nome, it.cat);
       if (aperta) { a.serve += it.q; a.clienti.push({nome:r.nome, q:it.q, data:r.dataInst, stato:r.stato}); }
       else { a.inst += it.q; a.mov.push({t:'out', data:r.dataInst, q:it.q, chi:r.nome}); } });
-    if (aperta) { if (!items.length) senzaMat++; pratiche.push({r, items, ok:/^ok/.test(st)}); }
+    if (aperta) { if (!items.length) senzaMat++; pratiche.push({r, items, ok:/ok\W*da\W*installare/.test(st)}); }
   });
 
   const arts = Object.values(A).map(a => { a.giac = a.acq - a.inst; a.ordina = Math.max(0, a.serve + a.scorta - Math.max(0, a.giac)); a.libero = Math.max(0, a.giac - a.serve); return a; });
@@ -771,7 +771,7 @@ function conAssegnazioni(G){
   const ASG = mappaAsg();
   G.arts.forEach(a => a.ass = 0);
   const byK = {}; G.arts.forEach(a => byK[a.k] = a);
-  G.ok = G.pratiche.filter(p => p.ok).slice().sort((x,y) => (x.r.dataInst?0:1)-(y.r.dataInst?0:1) || String(x.r.dataInst).localeCompare(String(y.r.dataInst)) || x.r.r - y.r.r);
+  G.ok = G.pratiche.slice().sort((x,y) => (x.ok?0:1)-(y.ok?0:1) || (x.r.dataInst?0:1)-(y.r.dataInst?0:1) || String(x.r.dataInst).localeCompare(String(y.r.dataInst)) || x.r.r - y.r.r);
   G.ok.forEach(p => p.items.forEach(it => { const q = ASG[chiaveAsg(p.r.r, it.nome)] || 0; it.asg = q; if (q && byK[NORM(it.nome)]) byK[NORM(it.nome)].ass += q; }));
   G.arts.forEach(a => a.liberi = Math.max(0, a.giac - a.ass));
   G.byK = byK;
@@ -798,7 +798,7 @@ function renderMag(){
       <div class="card lift kpi-accent"><div class="label">In magazzino</div><div class="big">${tot} pz</div><div class="muted" style="margin-top:6px">${inCasa.length} articoli · dal ${dIt(G.inizio)||'—'}</div></div>
       <div class="card lift"><div class="label">Assegnati ai clienti</div><div class="big" style="color:var(--info)">${totAss} pz</div><div class="muted" style="margin-top:6px">riservati, non usarli per altri</div></div>
       <div class="card lift"><div class="label">Liberi</div><div class="big" style="color:var(--good)">${tot - totAss} pz</div><div class="muted" style="margin-top:6px">disponibili da assegnare</div></div>
-      <div class="card lift"><div class="label">Prodotti da assegnare</div><div class="big" style="color:var(--warn)">${daAss}</div><div class="muted" style="margin-top:6px">${pronti} di ${G.ok.length} clienti OK da installare pronti</div></div>
+      <div class="card lift"><div class="label">Prodotti da assegnare</div><div class="big" style="color:var(--warn)">${daAss}</div><div class="muted" style="margin-top:6px">${pronti} di ${G.ok.length} clienti da installare pronti</div></div>
     </div>
     <div class="stock">${inCasa.map(a => { const p = parti(a.nome), as = Math.min(a.ass, a.giac), lib = a.liberi;
       return `<div class="card lift sk" data-k="${esc(a.k)}"><div class="sk-top">${ico(a.cat)}${p.tag?`<span class="tag">${esc(p.tag)}</span>`:''}${lib?`<span class="pill p-ok" style="margin-left:auto">${lib} liberi</span>`:`<span class="pill p-info" style="margin-left:auto">Tutto assegnato</span>`}</div>
@@ -820,16 +820,16 @@ function renderMag(){
       const qualcuno = p.items.some(it => !it.asg && it.q > 0 && (G.byK[NORM(it.nome)]||{liberi:0}).liberi >= it.q);
       const imp = [(p.r.kw ? n1.format(p.r.kw)+' kWp' : '') + (String(p.r.kwh||'').trim() ? ' + '+p.r.kwh+' kWh' : '')].filter(Boolean);
       return `<div class="card cli"><div class="cli-h"><div class="cal ${d?'':'nd'}"><div class="m">${d?d.toLocaleDateString('it-IT',{month:'short'}).replace('.',''):'—'}</div><div class="d">${d?d.getDate():'?'}</div></div>
-        <div style="min-width:0"><div class="nm">${esc(p.r.nome)}</div><div class="sb">${[cap(p.r.comune), ...imp, cap(p.r.agente)].filter(Boolean).join(' · ')}</div></div>
+        <div style="min-width:0"><div class="nm">${esc(p.r.nome)}</div><span class="pill ${p.ok?'p-ok':'p-info'}" style="margin:3px 0 2px;display:inline-block">${p.ok?'OK da installare':'In lavorazione'}</span><div class="sb">${[cap(p.r.comune), ...imp, cap(p.r.agente)].filter(Boolean).join(' · ')}</div></div>
         <div class="rt"><div><div class="prog"><span style="width:${n?f/n*100:0}%"></span></div><div class="muted" style="text-align:right;margin-top:4px">${f} di ${n} assegnati</div></div>${tutto?'<span class="pill p-ok">✓ Pronto</span>':''}</div></div>
         ${rows || `<div class="it"><div class="n"><div>Materiali non indicati nell'archivio</div><div>Compila pannelli, inverter e batteria nella pratica</div></div></div>`}
         ${n ? `<div class="cli-f">${p.items.some(it => it.asg) ? `<button class="pill-light" data-togli="${p.r.r}">Togli tutto</button>` : ''}${qualcuno ? `<button class="pill-dark" data-tutto="${p.r.r}">Assegna tutto il disponibile</button>` : ''}</div>` : ''}</div>`;
-    }).join('') || '<div class="card empty">Nessun cliente OK da installare</div>';
+    }).join('') || '<div class="card empty">Nessun cliente da installare</div>';
     const residui = inCasa.map(a => `<div class="sr"><span>${esc(parti(a.nome).nome)}</span><span class="v" style="color:${a.liberi?'var(--good)':'var(--ink-3)'}">${a.liberi} liberi</span></div>`).join('') || '<div class="empty">Magazzino vuoto</div>';
     body = `<div class="asg"><div style="display:flex;flex-direction:column;gap:14px">${cards}</div>
       <div class="side"><div class="card"><div class="title" style="margin-bottom:6px">Liberi dopo le assegnazioni</div>${residui}</div>
         <div class="card ai"><div class="title" style="display:flex;gap:10px;align-items:center"><span class="orb"></span>Come funziona</div>
-        <p class="note-box" style="margin:10px 0 0">Tocca <b>Assegna</b>: i pezzi vengono riservati a quel cliente e non risultano più liberi per gli altri. Tocca di nuovo per toglierli.<br><br>Quando la pratica non è più <b>OK da installare</b> (es. installato), l'assegnazione si chiude e la merce viene scalata con l'installazione.<br><br>Se i pezzi liberi non bastano compare <b>Manca</b>: il prodotto è nella lista Da ordinare.</p></div></div></div>`;
+        <p class="note-box" style="margin:10px 0 0">Tocca <b>Assegna</b>: i pezzi vengono riservati a quel cliente e non risultano più liberi per gli altri. Tocca di nuovo per toglierli.<br><br>Quando il cliente viene installato, l'assegnazione si chiude e la merce viene scalata con l'installazione.<br><br>Se i pezzi liberi non bastano compare <b>Manca</b>: il prodotto è nella lista Da ordinare.</p></div></div></div>`;
   }
 
   if (ms === 'ord') {
